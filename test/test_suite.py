@@ -27,6 +27,8 @@ from sqlalchemy.testing.assertions import AssertsCompiledSQL
 from sqlalchemy.testing.suite import ComponentReflectionTest as _ComponentReflectionTest
 import sqlalchemy as sa
 from sqlalchemy import inspect
+from sqlalchemy_hana.types import TINYINT
+from sqlalchemy_hana.types import DOUBLE
 from sqlalchemy_hana.types import SMALLDECIMAL
 
 
@@ -332,6 +334,21 @@ class HANACompileTest(fixtures.TestBase, AssertsCompiledSQL):
 
     @testing.only_on('hana')
     @testing.only_if('hana+hdbcli')
+    def test_tinyint_compile(self):
+        self.assert_compile(TINYINT(), "TINYINT")
+
+    @testing.only_on('hana')
+    @testing.only_if('hana+hdbcli')
+    def test_double_compile(self):
+        self.assert_compile(DOUBLE(), "DOUBLE")
+
+    @testing.only_on('hana')
+    @testing.only_if('hana+hdbcli')
+    def test_smalldecimal_compile(self):
+        self.assert_compile(SMALLDECIMAL(), "SMALLDECIMAL")
+
+    @testing.only_on('hana')
+    @testing.only_if('hana+hdbcli')
     def test_sql_row_locking(self):
         table1 = table(
             "mytable", column("myid"), column("name"), column("description")
@@ -362,29 +379,43 @@ class HANACompileTest(fixtures.TestBase, AssertsCompiledSQL):
         )
 
 
-class NumericTest(fixtures.TestBase):
+class HANANumericTest(fixtures.TestBase):
     __backend__ = True
+
+    def _fixture(self, metadata, type_, data):
+        t = Table("t", metadata, Column("val", type_))
+        metadata.create_all()
+
+        with testing.db.connect() as conn:
+            conn.execute(t.insert(), val=data)
 
     @testing.only_on('hana')
     @testing.only_if('hana+hdbcli')
     @testing.provide_metadata
-    def test_smalldecimal(self):
-        t = Table("t", self.metadata, Column("x", SMALLDECIMAL))
-        t.create()
+    def test_tinyint(self, connection):
+        metadata = self.metadata
+        self._fixture(metadata, TINYINT, 123)
+        val = connection.execute("select val from t").scalar()
+        assert isinstance(val, int)
+        eq_(val, 123)
 
-        with testing.db.connect() as conn:
-            ins = (t.insert()
-                    .values(x=1.01)
-                    .compile(
-                        dialect=testing.db.dialect
-                        )
-                    )
-            conn.execute(ins)
+    @testing.only_on('hana')
+    @testing.only_if('hana+hdbcli')
+    @testing.provide_metadata
+    def test_double(self, connection):
+        metadata = self.metadata
+        self._fixture(metadata, DOUBLE, 123.45)
+        val = connection.execute("select val from t").scalar()
+        assert isinstance(val, float)
+        eq_(val, 123.45)
 
-            stmt = t.select()
-            stmt = stmt.compile(
-                    dialect=testing.db.dialect
-                    )
-            for row in conn.execute(stmt):
-                value = row[0]
-                assert value == decimal.Decimal("1.01")
+    @testing.only_on('hana')
+    @testing.only_if('hana+hdbcli')
+    @testing.provide_metadata
+    def test_smalldecimal(self, connection):
+        metadata = self.metadata
+        self._fixture(metadata, SMALLDECIMAL, decimal.Decimal("1.01"))
+        val = connection.execute("select val from t").scalar()
+        assert isinstance(val, decimal.Decimal)
+        eq_(val, decimal.Decimal("1.01"))
+
